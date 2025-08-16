@@ -1,0 +1,428 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Time‑Shift Snake — Derivative Edition</title>
+  <style>
+    :root{
+      --bg:#0b0f14; --grid:#121826; --fg:#d7e1ff; --accent:#7bdcff; --accent2:#a0ff7b; --danger:#ff6680; --warn:#ffd166; --muted:#8aa0b4;
+      --cell:22; /* logical cell size in px */
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:
+        radial-gradient(1200px 800px at 80% -200px, #162033 0%, transparent 70%),
+        radial-gradient(1400px 1000px at 0% 120%, #0e1524 0%, transparent 70%),
+        var(--bg);
+      color:var(--fg); font-family: ui-sans-serif, system-ui, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Noto Color Emoji;
+      display:flex; flex-direction:column; align-items:stretch; gap:10px;
+    }
+    header{display:flex; align-items:center; justify-content:space-between; padding:10px 14px; backdrop-filter: blur(6px); position:sticky; top:0; z-index:2}
+    header .title{font-weight:800; letter-spacing:.3px}
+    header .buttons{display:flex; gap:8px; align-items:center}
+    button, .pill{
+      background: linear-gradient(180deg,#1b2436,#101624); color:var(--fg); border:1px solid #263047; padding:8px 12px; border-radius:999px; cursor:pointer;
+      font-weight:600; box-shadow:0 2px 0 #0a0e16; transition: transform .05s ease;
+    }
+    button:hover{filter:brightness(1.08)}
+    button:active{transform:translateY(1px)}
+    .pill{display:inline-flex; align-items:center; gap:8px}.layout{display:grid; grid-template-columns: 1fr 360px; gap:12px; padding:0 12px 16px}
+@media (max-width: 980px){ .layout{grid-template-columns:1fr} }
+
+.gamewrap{position:relative; border-radius:18px; overflow:hidden; border:1px solid #1c263a; box-shadow: 0 10px 25px rgba(0,0,0,.35)}
+canvas{display:block; width:100%; height:min(72vh, 80vw); background: repeating-linear-gradient(0deg, var(--grid) 0, var(--grid) 1px, transparent 1px, transparent var(--cell) ),
+                              repeating-linear-gradient(90deg, var(--grid) 0, var(--grid) 1px, transparent 1px, transparent var(--cell));
+}
+.hud{position:absolute; inset:0; pointer-events:none; padding:10px}
+.hud .top{display:flex; justify-content:space-between; gap:8px}
+.card{background:linear-gradient(180deg, rgba(18,24,38,.7), rgba(10,14,22,.6)); border:1px solid #263047; border-radius:14px; padding:8px 10px; box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)}
+.score{font-weight:800; font-size:18px}
+.muted{color:var(--muted)}
+.bad{color:var(--danger)}
+.good{color:var(--accent2)}
+
+.rightbar{display:flex; flex-direction:column; gap:12px}
+.section{background:linear-gradient(180deg, #0f1625, #0a0f1a); border:1px solid #1f2a40; border-radius:16px; padding:12px}
+.section h3{margin:.2rem 0 .6rem; font-size:16px}
+.key{display:inline-grid; place-items:center; width:26px; height:26px; border-radius:6px; border:1px solid #30405d; background:#0c1220; box-shadow:inset 0 -2px 0 rgba(255,255,255,.03)}
+
+.touch{position:absolute; inset:auto 0 0 0; padding:10px; display:grid; grid-template-columns:repeat(3,1fr); gap:10px; pointer-events:auto}
+.touch button{padding:16px 0;font-size:16px}
+@media (min-width: 980px){ .touch{display:none} }
+
+.center-modal{position:absolute; inset:0; display:grid; place-items:center}
+.modal{pointer-events:auto; max-width:560px; margin:12px; text-align:center}
+.modal h2{margin:.2rem 0 .4rem}
+.chips{display:flex; flex-wrap:wrap; gap:8px; justify-content:center}
+
+.footer{font-size:12px; color:var(--muted); text-align:center; padding:6px 0 12px}
+a{color:var(--accent)}
+
+.powerup-chip{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid #26445f; background:#0d1a26;}
+.dot{width:10px; height:10px; border-radius:50%}
+
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">🐍 <span class="muted">Time‑Shift</span> Snake — <strong>Derivative Edition</strong></div>
+    <div class="buttons">
+      <button id="btnPause" title="Pause / Resume (P)">⏸️ Pause</button>
+      <button id="btnReset" title="Restart (R)">🔄 Restart</button>
+      <button id="btnMute" title="Toggle sound (M)">🔊 Sound</button>
+    </div>
+  </header>  <div class="layout">
+    <div class="gamewrap">
+      <canvas id="game" width="880" height="616" aria-label="Snake game canvas"></canvas>
+      <div class="hud">
+        <div class="top">
+          <div class="card score">Score: <span id="score">0</span> <span class="muted">(x<span id="mult">1</span>)</span></div>
+          <div class="card">Best: <span id="best">0</span> · Level: <span id="level">1</span> · Speed: <span id="speed">1.0</span></div>
+          <div class="card">Echo: <span id="echo">off</span> · Shield: <span id="shield">off</span></div>
+        </div>
+        <div class="touch" aria-hidden="true">
+          <button data-dir="left">◀️</button>
+          <button data-dir="up">🔼</button>
+          <button data-dir="down">🔽</button>
+          <button data-dir="right">▶️</button>
+          <button id="btnDash">⚡ Dash</button>
+          <button id="btnPhase">🌀 Phase</button>
+        </div>
+      </div>
+      <div class="center-modal" id="overlay" hidden>
+        <div class="section modal">
+          <h2>Time‑Shift Snake</h2>
+          <p class="muted">A fresh twist on the classic. Your <strong>echo</strong>—a shadow trail of your last 5 seconds—returns to the board. Don't collide with it! Chain quick snacks for a score <strong>multiplier</strong>. Use powers to survive.</p>
+          <div class="chips">
+            <span class="powerup-chip"><span class="dot" style="background:var(--accent)"></span> <strong>⚡ Dash</strong> — burst forward</span>
+            <span class="powerup-chip"><span class="dot" style="background:var(--warn)"></span> <strong>🌀 Phase</strong> — pass through yourself</span>
+            <span class="powerup-chip"><span class="dot" style="background:var(--accent2)"></span> <strong>🛡 Shield</strong> — one-hit save</span>
+            <span class="powerup-chip"><span class="dot" style="background:var(--danger)"></span> <strong>⏪ Echo</strong> — your past path chases you</span>
+          </div>
+          <p>Controls: <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> / Arrow keys · <span class="key">Space</span> Dash · <span class="key">Shift</span> Phase · <span class="key">P</span> Pause · <span class="key">R</span> Restart</p>
+          <div style="display:flex; gap:8px; justify-content:center; margin-top:.5rem">
+            <button id="btnPlay">▶️ Play</button>
+            <button id="btnHow">❓ How to play</button>
+          </div>
+        </div>
+      </div>
+    </div><aside class="rightbar">
+  <div class="section">
+    <h3>How this is "Derivative"</h3>
+    <p class="muted">The "echo" is the <em>time‑derivative</em> of your past movement: it recreates your last path at a fixed delay. Your current motion and its delayed copy must co‑exist—manage both to survive.</p>
+  </div>
+  <div class="section">
+    <h3>Power‑ups</h3>
+    <ul>
+      <li><strong>⚡ Dash</strong>: short speed boost. Recharges on fruit pickup.</li>
+      <li><strong>🌀 Phase</strong>: pass through body/echo for 1.5s.</li>
+      <li><strong>🛡 Shield</strong>: auto‑consumed to ignore one crash.</li>
+    </ul>
+  </div>
+  <div class="section">
+    <h3>Gameplay Options</h3>
+    <label class="pill"><input id="wrap" type="checkbox" checked style="margin-right:8px">Wrap edges</label>
+    <label class="pill"><input id="echoToggle" type="checkbox" checked style="margin-right:8px">Enable echo</label>
+    <label class="pill"><input id="vfx" type="checkbox" checked style="margin-right:8px">Particles</label>
+    <label class="pill"><input id="hard" type="checkbox" style="margin-right:8px">Hard mode (faster echo)</label>
+  </div>
+  <div class="section">
+    <h3>Session</h3>
+    <div>High score: <strong id="high">0</strong></div>
+    <div>Games played: <strong id="games">0</strong></div>
+    <div class="muted" style="margin-top:6px">Data saved locally in your browser.</div>
+  </div>
+  <div class="section footer">Built with ❤️, no libraries. Single‑file, mobile‑friendly, accessible.
+  </div>
+</aside>
+
+  </div>  <div class="footer">Tip: chain fruits quickly for higher <strong>multiplier</strong>—but your <strong>echo</strong> gets stronger too.</div><audio id="sEat" preload="auto"><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBIAAABAAEAQBQAAEA8AAACABAAZGF0YQgAAAAA" type="audio/wav"></audio> <audio id="sCrash" preload="auto"><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBIAAABAAEAQBQAAEA8AAACABAAZGF0YQgAAAAA" type="audio/wav"></audio> <audio id="sPower" preload="auto"><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBIAAABAAEAQBQAAEA8AAACABAAZGF0YQgAAAAA" type="audio/wav"></audio>
+
+  <script>
+  // === Utility ===
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const rand=(n)=>Math.floor(Math.random()*n);
+  const choice=(arr)=>arr[rand(arr.length)];
+
+  // === Game constants ===
+  const CELL=22; // px per cell for logic grid
+  const GRID={ cols: Math.floor(880/CELL), rows: Math.floor(616/CELL) };
+
+  /** Scales canvas to device size while keeping grid logic fixed */
+  function fitCanvas(canvas){
+    // Match CSS size via CSS; canvas internal size stays multiple of CELL
+    const rect = canvas.getBoundingClientRect();
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width  = Math.floor(rect.width * ratio);
+    canvas.height = Math.floor(rect.height * ratio);
+    return ratio;
+  }
+
+  // === State ===
+  const state={
+    running:false, paused:false, t:0, dt:0, last:0, ratio:1,
+    cell:CELL, cols:GRID.cols, rows:GRID.rows,
+    dir:{x:1,y:0}, nextDir:{x:1,y:0},
+    snake:[], grow:0,
+    echo:[], echoDelay:1500, echoSpeed:1, echoEnabled:true,
+    fruit:{x:10,y:10, kind:'normal'},
+    mult:1, multTimer:0,
+    speed:7.5, // cells per second base
+    dash:0, phase:0, shield:false,
+    wrap:true, particles:true, hard:false,
+    score:0, level:1, best:0, games:0,
+    sounds:true,
+  };
+
+  // Load saves
+  try{
+    const save = JSON.parse(localStorage.getItem('tss-save')||'{}');
+    ['best','games'].forEach(k=>{ if(save[k]!=null) state[k]=save[k]; });
+    document.getElementById('high').textContent=state.best;
+    document.getElementById('games').textContent=state.games;
+  }catch(e){/* ignore */}
+
+  const canvas=document.getElementById('game');
+  const ctx=canvas.getContext('2d');
+
+  // UI refs
+  const ui={
+    score:document.getElementById('score'),
+    best:document.getElementById('best'),
+    level:document.getElementById('level'),
+    speed:document.getElementById('speed'),
+    mult:document.getElementById('mult'),
+    echo:document.getElementById('echo'),
+    shield:document.getElementById('shield'),
+    overlay:document.getElementById('overlay'),
+    btnPause:document.getElementById('btnPause'),
+    btnReset:document.getElementById('btnReset'),
+    btnMute:document.getElementById('btnMute'),
+    btnPlay:document.getElementById('btnPlay'),
+    btnHow:document.getElementById('btnHow'),
+    wrap:document.getElementById('wrap'),
+    echoToggle:document.getElementById('echoToggle'),
+    vfx:document.getElementById('vfx'),
+    hard:document.getElementById('hard'),
+    btnDash:document.getElementById('btnDash'),
+    btnPhase:document.getElementById('btnPhase'),
+    high:document.getElementById('high'),
+    games:document.getElementById('games'),
+  };
+
+  const SFX={ eat:document.getElementById('sEat'), crash:document.getElementById('sCrash'), power:document.getElementById('sPower') };
+
+  function play(s){ if(!state.sounds) return; try{ s.currentTime=0; s.play(); }catch(e){} }
+
+  function save(){ localStorage.setItem('tss-save', JSON.stringify({best:state.best, games:state.games})); }
+
+  // === Init ===
+  function reset(){
+    state.dir={x:1,y:0}; state.nextDir={x:1,y:0};
+    state.snake=[{x:5,y:5},{x:4,y:5},{x:3,y:5}];
+    state.echo=[]; state.grow=0; state.mult=1; state.multTimer=0;
+    state.score=0; state.level=1; state.speed=7.5; state.dash=0; state.phase=0; state.shield=false;
+    state.echoDelay = state.hard ? 1000 : 1500;
+    state.echoSpeed = state.hard ? 1.25 : 1.0;
+    spawnFruit();
+    ui.score.textContent=state.score; ui.best.textContent=state.best; ui.level.textContent=state.level; ui.speed.textContent=state.speed.toFixed(1);
+    ui.mult.textContent=state.mult; ui.echo.textContent=state.echoEnabled? 'on':'off'; ui.shield.textContent=state.shield? 'on':'off';
+  }
+
+  function spawnFruit(){
+    let pos;
+    do{
+      pos={x:rand(state.cols), y:rand(state.rows)};
+    } while(occupied(pos.x,pos.y));
+    const kinds=['normal','dash','phase','shield'];
+    const weights=[0.68,0.12,0.12,0.08];
+    const r=Math.random();
+    let acc=0, kind='normal';
+    for(let i=0;i<kinds.length;i++){ acc+=weights[i]; if(r<=acc){ kind=kinds[i]; break; } }
+    state.fruit={...pos, kind};
+  }
+
+  function occupied(x,y){
+    return state.snake.some(s=>s.x===x&&s.y===y) || state.echo.some(s=>s.x===x&&s.y===y);
+  }
+
+  // === Input ===
+  const dirs={ArrowUp:{x:0,y:-1}, ArrowDown:{x:0,y:1}, ArrowLeft:{x:-1,y:0}, ArrowRight:{x:1,y:0},
+              w:{x:0,y:-1}, s:{x:0,y:1}, a:{x:-1,y:0}, d:{x:1,y:0}};
+  document.addEventListener('keydown',(e)=>{
+    const k=e.key; if(dirs[k]){ setDir(dirs[k]); e.preventDefault(); }
+    if(k===' '){ dash(); e.preventDefault(); }
+    if(k==='Shift'){ phase(); e.preventDefault(); }
+    if(k==='p' || k==='P'){ togglePause(); }
+    if(k==='r' || k==='R'){ start(); }
+    if(k==='m' || k==='M'){ toggleSound(); }
+  });
+  document.querySelectorAll('[data-dir]').forEach(btn=>btn.addEventListener('click',()=>{
+    const d=btn.getAttribute('data-dir');
+    setDir({left:{x:-1,y:0}, right:{x:1,y:0}, up:{x:0,y:-1}, down:{x:0,y:1}}[d]);
+  }));
+  ui.btnDash.addEventListener('click', dash);
+  ui.btnPhase.addEventListener('click', phase);
+
+  function setDir(d){
+    // prevent reversing into self
+    if(d.x===-state.dir.x && d.y===-state.dir.y) return;
+    state.nextDir=d;
+  }
+
+  ui.btnPause.onclick=togglePause;
+  ui.btnReset.onclick=()=>start();
+  ui.btnMute.onclick=toggleSound;
+  ui.btnPlay.onclick=()=>{ ui.overlay.hidden=true; start(); };
+  ui.btnHow.onclick=()=>alert('Eat fruit to grow. Your echo replays your path after a short delay—avoid it! Space: Dash, Shift: Phase, P: Pause, R: Restart. Options on the right.');
+
+  ui.wrap.onchange=()=>{ state.wrap=ui.wrap.checked; };
+  ui.echoToggle.onchange=()=>{ state.echoEnabled=ui.echoToggle.checked; ui.echo.textContent=state.echoEnabled? 'on':'off'; };
+  ui.vfx.onchange=()=>{ state.particles=ui.vfx.checked; };
+  ui.hard.onchange=()=>{ state.hard=ui.hard.checked; start(); };
+
+  function togglePause(){ if(!state.running) return; state.paused=!state.paused; ui.btnPause.textContent=state.paused?'▶️ Resume':'⏸️ Pause'; }
+  function toggleSound(){ state.sounds=!state.sounds; ui.btnMute.textContent=state.sounds?'🔊 Sound':'🔇 Muted'; }
+
+  function dash(){ if(state.dash<=0){return;} state.dash=0; // consume immediately
+    // temporary speed boost
+    const boost=state.speed*1.6; const prev=state.speed; state.speed=boost; setTimeout(()=>{state.speed=prev;}, 400);
+    particleBurst(head().x, head().y, 22);
+    play(SFX.power);
+  }
+  function phase(){ if(state.phase>0){return;} state.phase=1.5; play(SFX.power); }
+
+  function head(){ return state.snake[0]; }
+
+  // === Loop ===
+  function start(){
+    reset();
+    state.running=true; state.paused=false; ui.btnPause.textContent='⏸️ Pause';
+    state.t=0; state.last=performance.now(); ui.overlay.hidden=true; state.games++; ui.games.textContent=state.games; save();
+    requestAnimationFrame(frame);
+  }
+
+  function frame(now){
+    if(!state.running) return; requestAnimationFrame(frame);
+    state.dt = (now - state.last) / 1000; state.last = now; if(state.paused) return; state.t += state.dt;
+    state.ratio = fitCanvas(canvas);
+
+    step(state.dt);
+    draw();
+  }
+
+  // === Sim ===
+  let moveAcc=0, moveStep=0; // snake movement accumulator
+  let echoAcc=0, echoBuffer=[]; // to record past positions
+
+  function step(dt){
+    // timers
+    state.multTimer=Math.max(0, state.multTimer-dt);
+    if(state.multTimer<=0) state.mult=1;
+    if(state.phase>0) state.phase=Math.max(0, state.phase-dt);
+
+    // Record head path for echo
+    echoBuffer.push({x:head().x, y:head().y, time:state.t});
+    // Purge old
+    while(echoBuffer.length && state.t - echoBuffer[0].time > (state.echoDelay/1000)) echoBuffer.shift();
+
+    // Move snake in fixed time steps based on speed (cells/sec)
+    moveAcc += dt * state.speed;
+    while(moveAcc >= 1){
+      moveAcc -= 1;
+      tick();
+    }
+
+    // Echo follows with its own speed
+    if(state.echoEnabled){
+      echoAcc += dt * state.speed * state.echoSpeed;
+      while(echoAcc >= 1){ echoAcc -= 1; echoTick(); }
+    } else state.echo.length=0;
+  }
+
+  function tick(){
+    state.dir = state.nextDir;
+    let nx=head().x + state.dir.x;
+    let ny=head().y + state.dir.y;
+
+    if(state.wrap){ nx=(nx+state.cols)%state.cols; ny=(ny+state.rows)%state.rows; }
+    if(!state.wrap){ if(nx<0||ny<0||nx>=state.cols||ny>=state.rows) return crash(); }
+
+    const willCollide = collides(nx,ny);
+    const cell={x:nx,y:ny};
+    state.snake.unshift(cell);
+
+    // Eat?
+    if(nx===state.fruit.x && ny===state.fruit.y){
+      onEat(state.fruit.kind);
+      spawnFruit();
+    }else if(state.grow>0){
+      state.grow--; // keep tail to grow
+    }else{
+      state.snake.pop();
+    }
+
+    if(willCollide){
+      if(state.phase>0){ /* ignore */ }
+      else if(state.shield){ state.shield=false; ui.shield.textContent='off'; particleBurst(nx,ny,16,'shield'); }
+      else{ return crash(); }
+    }
+  }
+
+  function echoTick(){
+    // Find the oldest recorded point (delayed by echoDelay)
+    const target = echoBuffer[0];
+    if(!target) return; // not enough history yet
+    // Move echo head to target and shift body
+    if(state.echo.length===0){ state.echo=[{x:target.x,y:target.y}]; return; }
+    const hx=target.x, hy=target.y;
+    state.echo.unshift({x:hx, y:hy});
+    // keep echo similar length to snake (scaled)
+    while(state.echo.length > state.snake.length) state.echo.pop();
+  }
+
+  function collides(x,y){
+    const selfHit = state.snake.some((s,i)=>i>0 && s.x===x && s.y===y);
+    const echoHit = state.echo.some(s=>s.x===x && s.y===y);
+    return selfHit || echoHit;
+  }
+
+  function onEat(kind){
+    play(SFX.eat);
+    particleBurst(state.fruit.x, state.fruit.y, 18, kind);
+    // scoring
+    state.mult = clamp(state.mult+0.2, 1, 5);
+    state.multTimer = 2.2; // window to chain
+    const base=10; state.score += Math.floor(base*state.mult);
+    ui.score.textContent=state.score; ui.mult.textContent=state.mult.toFixed(1).replace(/\.0$/, '');
+
+    // level progression
+    if(state.score>0 && state.score % 100 === 0){
+      state.level++; state.speed += 0.6; ui.level.textContent=state.level; ui.speed.textContent=state.speed.toFixed(1);
+      state.echoSpeed += 0.05;
+    }
+
+    // growth and power
+    state.grow += 1;
+    if(kind==='dash') state.dash=1; // ready
+    else if(kind==='phase') state.phase=1.5;
+    else if(kind==='shield') state.shield=true, ui.shield.textContent='on';
+  }
+
+  function crash(){
+    play(SFX.crash);
+    state.running=false; ui.overlay.hidden=false;
+    // update best
+    if(state.score>state.best){ state.best=state.score; ui.best.textContent=state.best; ui.high.textContent=state.best; save(); }
+    // show quick summary in modal text
+    const el=ui.overlay.querySelector('.section.modal p.muted');
+    if(el) el.innerHTML = `Score <strong>${state.score}</strong> · Level <strong>${state.level}</strong> · Mult x<strong>${state.mult.toFixed(1)}</strong><br/>Press <span class="key">R</span> to retry or click Play.`;
+  }
+
+  // === Rendering ===
+  const P=[]; // particles
+  function particleBurst(x,y,n,kind='normal'){
+    if(!state.particles) return;
+    for(let i=0;i<n;i++){
+      P.push({x:(x+0.5)*s
